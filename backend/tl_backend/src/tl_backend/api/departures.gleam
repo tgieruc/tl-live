@@ -1,10 +1,10 @@
+import gleam/dynamic/decode
 import gleam/http
 import gleam/json
-import tl_backend/api/transport
-import gleam/dynamic/decode
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import tl_backend/api/transport
 import wisp.{type Request, type Response}
 
 /// Nearby stops around Censuy to aggregate departures from
@@ -82,10 +82,7 @@ fn parse_stationboard_response(
 }
 
 fn departure_decoder(stop_id stop_id: String) -> decode.Decoder(Departure) {
-  use stop_name <- decode.subfield(
-    ["stop", "station", "name"],
-    decode.string,
-  )
+  use stop_name <- decode.subfield(["stop", "station", "name"], decode.string)
   use number <- decode.field("number", decode.string)
   use to <- decode.field("to", decode.string)
   use departure <- decode.subfield(["stop", "departure"], decode.string)
@@ -107,12 +104,9 @@ fn encode_departure(departure: Departure) -> json.Json {
     #("line", json.string(departure.line)),
     #("destination", json.string(departure.destination)),
     #("departure", json.string(departure.departure)),
-    #(
-      "delay",
-      case departure.delay {
-        Some(d) -> json.int(d)
-        None -> json.null()
-      },
-    ),
+    #("delay", case departure.delay {
+      Some(d) -> json.int(d)
+      None -> json.null()
+    }),
   ])
 }

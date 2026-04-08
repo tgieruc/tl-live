@@ -1,0 +1,15 @@
+pre-commit:
+  parallel: true
+  commands:
+    gleam-format:
+      glob: "backend/**/*.gleam"
+      run: cd backend/tl_backend && gleam format --check src/
+    gleam-check:
+      glob: "backend/**/*.gleam"
+      run: cd backend/tl_backend && gleam check
+    prettier:
+      glob: "frontend/**/*.{svelte,ts,js,css,json}"
+      run: cd frontend/tl-dashboard && npx prettier --check src/
+    svelte-check:
+      glob: "frontend/**/*.{svelte,ts}"
+      run: cd frontend/tl-dashboard && npm run check

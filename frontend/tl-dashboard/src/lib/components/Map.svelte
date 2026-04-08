@@ -95,10 +95,7 @@
 	}
 
 	async function loadRoutes(m: maplibregl.Map) {
-		const [routesRes, stopsRes] = await Promise.all([
-			fetch('/api/routes'),
-			fetch('/api/stops')
-		]);
+		const [routesRes, stopsRes] = await Promise.all([fetch('/api/routes'), fetch('/api/stops')]);
 		const routes = await routesRes.json();
 		const stops = await stopsRes.json();
 
@@ -120,13 +117,17 @@
 
 		for (const [line, color] of Object.entries(LINE_COLORS)) {
 			m.addLayer({
-				id: `route-glow-${line}`, type: 'line', source: 'routes',
+				id: `route-glow-${line}`,
+				type: 'line',
+				source: 'routes',
 				filter: ['==', ['get', 'line'], line],
 				layout: { 'line-join': 'round', 'line-cap': 'round' },
 				paint: { 'line-color': color, 'line-width': 6, 'line-opacity': 0.12, 'line-blur': 3 }
 			});
 			m.addLayer({
-				id: `route-line-${line}`, type: 'line', source: 'routes',
+				id: `route-line-${line}`,
+				type: 'line',
+				source: 'routes',
 				filter: ['==', ['get', 'line'], line],
 				layout: { 'line-join': 'round', 'line-cap': 'round' },
 				paint: { 'line-color': color, 'line-width': 2.5, 'line-opacity': 0.6 }
@@ -135,12 +136,30 @@
 
 		m.addSource('stops', { type: 'geojson', data: stops });
 		m.addLayer({
-			id: 'stops-dot', type: 'circle', source: 'stops',
-			paint: { 'circle-color': '#ffffff', 'circle-radius': 2.5, 'circle-stroke-width': 1, 'circle-stroke-color': '#0a0a0a', 'circle-opacity': 0.5 }
+			id: 'stops-dot',
+			type: 'circle',
+			source: 'stops',
+			paint: {
+				'circle-color': '#ffffff',
+				'circle-radius': 2.5,
+				'circle-stroke-width': 1,
+				'circle-stroke-color': '#0a0a0a',
+				'circle-opacity': 0.5
+			}
 		});
 		m.addLayer({
-			id: 'stops-label', type: 'symbol', source: 'stops', minzoom: 15.5,
-			layout: { 'text-field': ['get', 'name'], 'text-size': 10, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-font': ['Noto Sans Regular'], 'text-max-width': 8 },
+			id: 'stops-label',
+			type: 'symbol',
+			source: 'stops',
+			minzoom: 15.5,
+			layout: {
+				'text-field': ['get', 'name'],
+				'text-size': 10,
+				'text-offset': [0, 1.2],
+				'text-anchor': 'top',
+				'text-font': ['Noto Sans Regular'],
+				'text-max-width': 8
+			},
 			paint: { 'text-color': '#666666', 'text-halo-color': '#0a0a0a', 'text-halo-width': 1.5 }
 		});
 	}
@@ -206,24 +225,43 @@
 				type: 'geojson',
 				data: {
 					type: 'FeatureCollection',
-					features: [{
-						type: 'Feature',
-						geometry: { type: 'Point', coordinates: CENTER },
-						properties: { name: 'Censuy' }
-					}]
+					features: [
+						{
+							type: 'Feature',
+							geometry: { type: 'Point', coordinates: CENTER },
+							properties: { name: 'Censuy' }
+						}
+					]
 				}
 			});
 			map.addLayer({
-				id: 'home-stop-glow', type: 'circle', source: 'home-stop',
+				id: 'home-stop-glow',
+				type: 'circle',
+				source: 'home-stop',
 				paint: { 'circle-color': '#00d4aa', 'circle-radius': 16, 'circle-opacity': 0.15, 'circle-blur': 1 }
 			});
 			map.addLayer({
-				id: 'home-stop-dot', type: 'circle', source: 'home-stop',
-				paint: { 'circle-color': '#00d4aa', 'circle-radius': 5, 'circle-stroke-width': 2, 'circle-stroke-color': '#0a0a0a' }
+				id: 'home-stop-dot',
+				type: 'circle',
+				source: 'home-stop',
+				paint: {
+					'circle-color': '#00d4aa',
+					'circle-radius': 5,
+					'circle-stroke-width': 2,
+					'circle-stroke-color': '#0a0a0a'
+				}
 			});
 			map.addLayer({
-				id: 'home-stop-label', type: 'symbol', source: 'home-stop',
-				layout: { 'text-field': 'Censuy', 'text-size': 11, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-font': ['Noto Sans Regular'] },
+				id: 'home-stop-label',
+				type: 'symbol',
+				source: 'home-stop',
+				layout: {
+					'text-field': 'Censuy',
+					'text-size': 11,
+					'text-offset': [0, 1.5],
+					'text-anchor': 'top',
+					'text-font': ['Noto Sans Regular']
+				},
 				paint: { 'text-color': '#00d4aa', 'text-halo-color': '#0a0a0a', 'text-halo-width': 2 }
 			});
 
@@ -235,19 +273,35 @@
 
 			for (const [line, color] of Object.entries(LINE_COLORS)) {
 				map.addLayer({
-					id: `bus-glow-${line}`, type: 'circle', source: 'buses',
+					id: `bus-glow-${line}`,
+					type: 'circle',
+					source: 'buses',
 					filter: ['==', ['get', 'line'], line],
 					paint: { 'circle-color': color, 'circle-radius': 12, 'circle-opacity': 0.3, 'circle-blur': 0.8 }
 				});
 				map.addLayer({
-					id: `bus-dot-${line}`, type: 'circle', source: 'buses',
+					id: `bus-dot-${line}`,
+					type: 'circle',
+					source: 'buses',
 					filter: ['==', ['get', 'line'], line],
-					paint: { 'circle-color': color, 'circle-radius': 6, 'circle-stroke-width': 2, 'circle-stroke-color': '#0a0a0a' }
+					paint: {
+						'circle-color': color,
+						'circle-radius': 6,
+						'circle-stroke-width': 2,
+						'circle-stroke-color': '#0a0a0a'
+					}
 				});
 				map.addLayer({
-					id: `bus-label-${line}`, type: 'symbol', source: 'buses',
+					id: `bus-label-${line}`,
+					type: 'symbol',
+					source: 'buses',
 					filter: ['==', ['get', 'line'], line],
-					layout: { 'text-field': ['get', 'line'], 'text-size': 8, 'text-font': ['Noto Sans Regular'], 'text-allow-overlap': true },
+					layout: {
+						'text-field': ['get', 'line'],
+						'text-size': 8,
+						'text-font': ['Noto Sans Regular'],
+						'text-allow-overlap': true
+					},
 					paint: { 'text-color': '#ffffff' }
 				});
 			}

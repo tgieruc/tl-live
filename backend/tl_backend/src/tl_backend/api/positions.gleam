@@ -57,8 +57,7 @@ pub fn handle(req: Request, static_dir: String) -> Response {
           let body = encode_trajectories(trajectories)
           wisp.json_response(json.to_string(body), 200)
         }
-        Error(_) ->
-          wisp.json_response("{\"trajectories\":[]}", 200)
+        Error(_) -> wisp.json_response("{\"trajectories\":[]}", 200)
       }
     }
     Error(_) -> wisp.internal_server_error()
@@ -113,9 +112,7 @@ fn compute_trajectories(
   }
 }
 
-fn fetch_stationboard_raw(
-  stop_id: String,
-) -> Result(List(RawDeparture), String) {
+fn fetch_stationboard_raw(stop_id: String) -> Result(List(RawDeparture), String) {
   case transport.fetch_stationboard(stop_id) {
     Ok(body) ->
       case parse_raw_departures(body, stop_id) {
@@ -144,20 +141,12 @@ fn parse_raw_departures(
   }
 }
 
-fn raw_departure_decoder(
-  stop_id: String,
-) -> decode.Decoder(RawDeparture) {
-  use stop_name <- decode.subfield(
-    ["stop", "station", "name"],
-    decode.string,
-  )
+fn raw_departure_decoder(stop_id: String) -> decode.Decoder(RawDeparture) {
+  use stop_name <- decode.subfield(["stop", "station", "name"], decode.string)
   use number <- decode.field("number", decode.string)
   use to <- decode.field("to", decode.string)
   use departure <- decode.subfield(["stop", "departure"], decode.string)
-  use delay <- decode.subfield(
-    ["stop", "delay"],
-    decode.optional(decode.int),
-  )
+  use delay <- decode.subfield(["stop", "delay"], decode.optional(decode.int))
   use lat <- decode.subfield(
     ["stop", "station", "coordinate", "x"],
     decode.float,
@@ -181,8 +170,7 @@ fn raw_departure_decoder(
 fn parse_route_stops(
   json_str: String,
 ) -> Result(List(#(String, List(StopTime))), String) {
-  let decoder =
-    decode.dict(decode.string, decode.list(stop_time_decoder()))
+  let decoder = decode.dict(decode.string, decode.list(stop_time_decoder()))
 
   case json.parse(json_str, decoder) {
     Ok(d) -> Ok(dict.to_list(d))
@@ -214,27 +202,35 @@ fn deduplicate_departures(
 ) -> List(RawDeparture) {
   departures
   |> list.sort(fn(a, b) {
-    let a_secs = int.absolute_value(
-      time_string_to_seconds(a.departure_time)
-      + option.unwrap(a.delay, 0) * 60
-      - now_secs,
-    )
-    let b_secs = int.absolute_value(
-      time_string_to_seconds(b.departure_time)
-      + option.unwrap(b.delay, 0) * 60
-      - now_secs,
-    )
+    let a_secs =
+      int.absolute_value(
+        time_string_to_seconds(a.departure_time)
+        + option.unwrap(a.delay, 0)
+        * 60
+        - now_secs,
+      )
+    let b_secs =
+      int.absolute_value(
+        time_string_to_seconds(b.departure_time)
+        + option.unwrap(b.delay, 0)
+        * 60
+        - now_secs,
+      )
     int.compare(a_secs, b_secs)
   })
   |> list.fold([], fn(acc, dep) {
-    let dep_secs = time_string_to_seconds(dep.departure_time)
-      + option.unwrap(dep.delay, 0) * 60
+    let dep_secs =
+      time_string_to_seconds(dep.departure_time)
+      + option.unwrap(dep.delay, 0)
+      * 60
     let bucket = dep_secs / 300
 
     let dominated =
       list.any(acc, fn(existing: RawDeparture) {
-        let ex_secs = time_string_to_seconds(existing.departure_time)
-          + option.unwrap(existing.delay, 0) * 60
+        let ex_secs =
+          time_string_to_seconds(existing.departure_time)
+          + option.unwrap(existing.delay, 0)
+          * 60
         let ex_bucket = ex_secs / 300
 
         existing.line == dep.line
@@ -302,8 +298,10 @@ fn build_trajectory(
       case stop_match {
         Ok(matched_stop) -> {
           // Real departure time at this stop (unix seconds)
-          let real_dep_secs = time_string_to_seconds(dep.departure_time)
-            + option.unwrap(dep.delay, 0) * 60
+          let real_dep_secs =
+            time_string_to_seconds(dep.departure_time)
+            + option.unwrap(dep.delay, 0)
+            * 60
 
           // Template departure time at this stop (seconds since midnight)
           let template_dep_secs = time_string_to_seconds(matched_stop.departure)

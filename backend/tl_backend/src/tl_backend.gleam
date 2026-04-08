@@ -1,10 +1,10 @@
 import gleam/erlang/process
 import mist
-import wisp
-import wisp/wisp_mist
-import tl_backend/router
 import tl_backend/cache
 import tl_backend/context.{Context}
+import tl_backend/router
+import wisp
+import wisp/wisp_mist
 
 pub fn main() {
   wisp.configure_logger()

@@ -1,6 +1,5 @@
 /// Simple ETS-based cache with TTL.
 /// Caches API responses to avoid rate limiting transport.opendata.ch.
-
 /// Initialize the cache table. Call once at startup.
 @external(erlang, "tl_backend_cache_ffi", "init")
 pub fn init() -> Nil

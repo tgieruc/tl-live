@@ -1,9 +1,9 @@
 import gleam/http
-import wisp.{type Request, type Response}
-import tl_backend/context.{type Context}
 import tl_backend/api/departures
 import tl_backend/api/positions
 import tl_backend/api/routes
+import tl_backend/context.{type Context}
+import wisp.{type Request, type Response}
 
 pub fn handle_request(req: Request, ctx: Context) -> Response {
   use req <- middleware(req, ctx)

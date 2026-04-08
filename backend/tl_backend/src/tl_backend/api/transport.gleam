@@ -1,7 +1,6 @@
 /// Shared transport.opendata.ch API client with caching.
-
-import gleam/httpc
 import gleam/http/request
+import gleam/httpc
 import tl_backend/cache
 
 /// Cache TTL in seconds. With 7 stops, 60s TTL = 7 req/min = 10080/day (exactly the limit)
