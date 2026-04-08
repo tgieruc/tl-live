@@ -3,10 +3,12 @@ import mist
 import wisp
 import wisp/wisp_mist
 import tl_backend/router
+import tl_backend/cache
 import tl_backend/context.{Context}
 
 pub fn main() {
   wisp.configure_logger()
+  cache.init()
 
   let secret_key_base = wisp.random_string(64)
   let ctx = Context(static_directory: static_directory())

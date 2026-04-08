@@ -1,8 +1,6 @@
 import gleam/http
-import gleam/httpc
-import gleam/http/request
-import gleam/http/response
 import gleam/json
+import tl_backend/api/transport
 import gleam/dynamic/decode
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -12,8 +10,6 @@ import wisp.{type Request, type Response}
 /// Nearby stops around Censuy to aggregate departures from
 const stops = [
   #("8592209", "Renens VD, Censuy"),
-  #("8592218", "Renens VD, Caudray"),
-  #("8593866", "Chavannes-R., Préfaully"),
 ]
 
 pub fn handle(req: Request) -> Response {
@@ -57,21 +53,18 @@ fn fetch_all_departures() -> Result(List(Departure), String) {
 }
 
 fn fetch_stationboard(stop_id: String) -> Result(List(Departure), String) {
-  let url =
-    "https://transport.opendata.ch/v1/stationboard?id="
-    <> stop_id
-    <> "&limit=10"
-
-  let assert Ok(req) = request.to(url)
-
-  case httpc.send(req) {
-    Ok(resp) -> parse_stationboard_response(resp, stop_id)
-    Error(_) -> Error("HTTP request failed for stop " <> stop_id)
+  case transport.fetch_stationboard(stop_id) {
+    Ok(body) ->
+      case parse_stationboard_response(body, stop_id) {
+        Ok(deps) -> Ok(deps)
+        Error(_) -> Ok([])
+      }
+    Error(_) -> Ok([])
   }
 }
 
 fn parse_stationboard_response(
-  resp: response.Response(String),
+  body: String,
   stop_id: String,
 ) -> Result(List(Departure), String) {
   let decoder = {
@@ -82,7 +75,7 @@ fn parse_stationboard_response(
     decode.success(departures)
   }
 
-  case json.parse(resp.body, decoder) {
+  case json.parse(body, decoder) {
     Ok(departures) -> Ok(departures)
     Error(_) -> Error("Failed to parse response for stop " <> stop_id)
   }

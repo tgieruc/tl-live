@@ -1,6 +1,26 @@
 import csv
 import json
+import time
+import urllib.request
 from collections import defaultdict
+
+
+def snap_to_roads(coords):
+    """Send stop coords to OSRM and get road-following geometry back."""
+    coord_str = ';'.join(f"{c[0]},{c[1]}" for c in coords)
+    url = f"http://router.project-osrm.org/route/v1/driving/{coord_str}?overview=full&geometries=geojson"
+
+    req = urllib.request.Request(url, headers={'User-Agent': 'tl-live-dashboard/1.0'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        if data.get('code') == 'Ok' and data['routes']:
+            snapped = data['routes'][0]['geometry']['coordinates']
+            print(f"    OSRM: {len(coords)} stops -> {len(snapped)} road points")
+            return snapped
+    except Exception as e:
+        print(f"    OSRM failed: {e}")
+    return coords  # fallback to straight lines
 
 target_lines = {'25', '32', '33'}
 route_ids = {}
@@ -85,9 +105,14 @@ for (line, headsign), tid in sorted(best.items()):
                     'properties': {'name': s['name'], 'stop_id': sid}
                 })
 
+    # Snap to roads via OSRM
+    print(f"  Snapping line {line} -> {headsign}...")
+    snapped_coords = snap_to_roads(coords)
+    time.sleep(1)  # be polite to the public OSRM server
+
     features.append({
         'type': 'Feature',
-        'geometry': {'type': 'LineString', 'coordinates': coords},
+        'geometry': {'type': 'LineString', 'coordinates': snapped_coords},
         'properties': {'line': line, 'headsign': headsign, 'num_stops': len(coords)}
     })
     route_data[f"{line}_{headsign}"] = stops_list
