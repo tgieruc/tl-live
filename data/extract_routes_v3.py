@@ -204,6 +204,83 @@ def generate_bus_geometries(bus_routes, trip_stops, stops):
     return geometries
 
 
+def write_outputs(best_trips, trip_info, trip_stops, stops, routes_meta,
+                  bus_geometries, rail_geometries, best_trip_modes, output_dir):
+    """Write routes.geojson, route_stops.json, and stops.geojson."""
+    features = []
+    stop_features = []
+    seen_stops = set()
+    route_data = {}
+
+    for (line, headsign), tid in sorted(best_trips.items()):
+        route_type = best_trip_modes[(line, headsign)]
+        route_id = trip_info[tid]["route_id"]
+        color = routes_meta[route_id].get("color", "")
+
+        # Get geometry
+        if (line, headsign) in bus_geometries:
+            coords = bus_geometries[(line, headsign)]
+        elif (line, headsign) in rail_geometries:
+            coords = rail_geometries[(line, headsign)]
+        else:
+            continue  # skip routes with no geometry
+
+        # Build stop list for route_stops.json
+        stops_list = []
+        for stop in trip_stops[tid]:
+            sid = stop["stop_id"]
+            s = stops.get(sid)
+            if s:
+                stops_list.append({
+                    "stop_id": sid,
+                    "name": s["name"],
+                    "lat": s["lat"],
+                    "lon": s["lon"],
+                    "arrival": stop["arrival"],
+                    "departure": stop["departure"],
+                })
+                if sid not in seen_stops:
+                    seen_stops.add(sid)
+                    stop_features.append({
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [s["lon"], s["lat"]]},
+                        "properties": {"name": s["name"], "stop_id": sid},
+                    })
+
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {
+                "line": line,
+                "headsign": headsign,
+                "route_type": route_type,
+                "color": f"#{color}" if color and not color.startswith("#") else color,
+                "num_stops": len(stops_list),
+            },
+        })
+        route_data[f"{line}_{headsign}"] = stops_list
+
+    # Write files
+    routes_geojson = {"type": "FeatureCollection", "features": features}
+    stops_geojson = {"type": "FeatureCollection", "features": stop_features}
+
+    routes_path = output_dir / "routes.geojson"
+    stops_path = output_dir / "stops.geojson"
+    route_stops_path = output_dir / "route_stops.json"
+
+    with open(routes_path, "w") as f:
+        json.dump(routes_geojson, f)
+    with open(stops_path, "w") as f:
+        json.dump(stops_geojson, f)
+    with open(route_stops_path, "w") as f:
+        json.dump(route_data, f)
+
+    print(f"\nOutput written:")
+    print(f"  {routes_path}: {len(features)} routes ({routes_path.stat().st_size // 1024} KB)")
+    print(f"  {stops_path}: {len(stop_features)} stops ({stops_path.stat().st_size // 1024} KB)")
+    print(f"  {route_stops_path}: {len(route_data)} route variants ({route_stops_path.stat().st_size // 1024} KB)")
+
+
 def fetch_rail_network(center_lat, center_lon, radius_m=15000):
     """Fetch rail/tram/subway network from OSM via osmnx.
     Returns a networkx MultiDiGraph with rail edges."""
@@ -344,3 +421,15 @@ if __name__ == "__main__":
         print(f"  Generated {len(rail_geometries)} rail geometries")
     else:
         rail_geometries = {}
+
+    # Step 8: Write output files
+    print("\nWriting output files...")
+    write_outputs(
+        best_trips, trip_info, trip_stops, stops, routes_meta,
+        bus_geometries, rail_geometries, best_trip_modes, OUTPUT_DIR,
+    )
+
+    print("\nDone! Copy files to backend with:")
+    print("  cp data/routes.geojson backend/tl_backend/priv/static/")
+    print("  cp data/route_stops.json backend/tl_backend/priv/static/")
+    print("  cp data/stops.geojson backend/tl_backend/priv/static/")
