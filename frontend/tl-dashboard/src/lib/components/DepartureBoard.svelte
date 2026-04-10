@@ -2,10 +2,24 @@
 	import { onMount } from 'svelte';
 	import type { Departure, DeparturesResponse } from '$lib/types';
 	import { getLineColor } from '$lib/types';
+	import { stopId } from '$lib/stores/stop';
+	import { activeLines } from '$lib/stores/activeLines';
+	import { base } from '$app/paths';
 
 	let departures = $state<Departure[]>([]);
 	let loading = $state(true);
 	let now = $state(new Date());
+	let currentStopId = $state('');
+
+	// Re-fetch when stop changes
+	$effect(() => {
+		const id = $stopId;
+		if (id !== currentStopId) {
+			currentStopId = id;
+			loading = true;
+			fetchDepartures();
+		}
+	});
 
 	function minutesUntil(departureTime: string, delay: number | null): number {
 		const dep = new Date(departureTime);
@@ -16,15 +30,24 @@
 
 	async function fetchDepartures() {
 		try {
-			const res = await fetch('/api/departures');
+			const res = await fetch(`${base}/api/departures?stop=${$stopId}`);
+			if (!res.ok) return;
 			const data: DeparturesResponse = await res.json();
+			const nowMs = Date.now();
 			departures = data.departures
+				.filter((d) => {
+					// Filter out departures more than 2 min in the past
+					const depMs = new Date(d.departure).getTime() + (d.delay ?? 0) * 60_000;
+					return depMs > nowMs - 120_000;
+				})
 				.sort((a, b) => {
 					const aTime = new Date(a.departure).getTime() + (a.delay ?? 0) * 60_000;
 					const bTime = new Date(b.departure).getTime() + (b.delay ?? 0) * 60_000;
 					return aTime - bTime;
 				})
 				.slice(0, 12);
+			// Update active lines for map emphasis
+			activeLines.set(new Set(departures.map((d) => d.line)));
 		} catch (e) {
 			console.error('Failed to fetch departures', e);
 		}
