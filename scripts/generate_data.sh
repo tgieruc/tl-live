@@ -46,6 +46,7 @@ python3 extract_routes_v3.py
 # Step 4: Copy to backend static directory
 echo ""
 echo "Copying output to backend static directory..."
+mkdir -p "$STATIC_DIR"
 cp "$DATA_DIR/routes.geojson" "$STATIC_DIR/routes.geojson"
 cp "$DATA_DIR/route_stops.json" "$STATIC_DIR/route_stops.json"
 cp "$DATA_DIR/stops.geojson" "$STATIC_DIR/stops.geojson"

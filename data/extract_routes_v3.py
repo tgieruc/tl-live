@@ -98,15 +98,28 @@ def load_routes_metadata(gtfs_dir, route_ids):
     return routes
 
 
-def load_stop_sequences(gtfs_dir, trip_ids, stop_ids):
-    """Load stop sequences for given trips, filtered to known stops.
+def load_all_stops(gtfs_dir):
+    """Load ALL stops from stops.txt. Returns dict of stop_id -> {name, lat, lon}."""
+    stops = {}
+    with open(gtfs_dir / "stops.txt", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            stops[row["stop_id"]] = {
+                "name": row["stop_name"],
+                "lat": float(row["stop_lat"]),
+                "lon": float(row["stop_lon"]),
+            }
+    return stops
+
+
+def load_stop_sequences(gtfs_dir, trip_ids):
+    """Load full stop sequences for given trips (all stops, not just in-radius ones).
     Returns trip_id -> sorted list of {seq, stop_id, arrival, departure}."""
     trip_stops = defaultdict(list)
     print("  Loading stop sequences from stop_times.txt...")
     with open(gtfs_dir / "stop_times.txt", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             tid = row["trip_id"]
-            if tid in trip_ids and row["stop_id"] in stop_ids:
+            if tid in trip_ids:
                 trip_stops[tid].append({
                     "seq": int(row["stop_sequence"]),
                     "stop_id": row["stop_id"],
@@ -290,7 +303,6 @@ def fetch_rail_network(center_lat, center_lon, radius_m=15000):
         G = ox.graph_from_point(
             (center_lat, center_lon),
             dist=radius_m,
-            network_type="all",
             custom_filter=custom_filter,
             retain_all=True,
             truncate_by_edge=True,
@@ -360,15 +372,15 @@ if __name__ == "__main__":
         print("Run scripts/generate_data.sh first to download the feed.")
         sys.exit(1)
 
-    # Step 1: Load stops within radius
+    # Step 1: Load stops within radius (for identifying relevant trips)
     print(f"Loading stops within {RADIUS_KM} km of Lausanne...")
-    stops = load_stops_in_radius(GTFS_DIR, LAUSANNE_LAT, LAUSANNE_LON, RADIUS_KM)
-    stop_ids = set(stops.keys())
-    print(f"  Found {len(stops)} stops in radius")
+    local_stops = load_stops_in_radius(GTFS_DIR, LAUSANNE_LAT, LAUSANNE_LON, RADIUS_KM)
+    local_stop_ids = set(local_stops.keys())
+    print(f"  Found {len(local_stops)} stops in radius")
 
     # Step 2: Find trips visiting those stops
     print("Finding trips serving these stops...")
-    trip_info = load_trips_for_stops(GTFS_DIR, stop_ids)
+    trip_info = load_trips_for_stops(GTFS_DIR, local_stop_ids)
     route_ids = set(info["route_id"] for info in trip_info.values())
     print(f"  Found {len(trip_info)} trips across {len(route_ids)} routes")
 
@@ -385,9 +397,14 @@ if __name__ == "__main__":
     for rt, count in sorted(mode_counts.items()):
         print(f"    {mode_names.get(rt, f'Type {rt}')}: {count} routes")
 
-    # Step 4: Load stop sequences
+    # Step 4: Load ALL stops (for geometry — routes may pass through stops outside radius)
+    print("Loading all stops for geometry...")
+    stops = load_all_stops(GTFS_DIR)
+    print(f"  Loaded {len(stops)} total stops")
+
+    # Step 5: Load full stop sequences (all stops per trip, not just in-radius)
     print("Loading stop sequences...")
-    trip_stops = load_stop_sequences(GTFS_DIR, set(trip_info.keys()), stop_ids)
+    trip_stops = load_stop_sequences(GTFS_DIR, set(trip_info.keys()))
     print(f"  Loaded sequences for {len(trip_stops)} trips")
 
     # Step 5: Pick best trip per (line, headsign)
