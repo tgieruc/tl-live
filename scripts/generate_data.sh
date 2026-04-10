@@ -32,9 +32,13 @@ else
     echo "(Run with --fresh to re-download)"
 fi
 
-# Step 2: Install Python dependencies
+# Step 2: Set up Python venv and install dependencies
 echo ""
-echo "Checking Python dependencies..."
+echo "Setting up Python environment..."
+if [[ ! -d "$DATA_DIR/.venv" ]]; then
+    python3 -m venv "$DATA_DIR/.venv"
+fi
+source "$DATA_DIR/.venv/bin/activate"
 pip install -q -r "$DATA_DIR/requirements.txt"
 
 # Step 3: Run extraction
@@ -42,6 +46,7 @@ echo ""
 echo "Running route extraction..."
 cd "$DATA_DIR"
 python3 extract_routes_v3.py
+deactivate
 
 # Step 4: Copy to backend static directory
 echo ""

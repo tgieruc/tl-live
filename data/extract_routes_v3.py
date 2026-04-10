@@ -28,12 +28,34 @@ SCRIPT_DIR = Path(__file__).parent
 GTFS_DIR = SCRIPT_DIR / "gtfs_national"
 OUTPUT_DIR = SCRIPT_DIR
 
-# GTFS route_type mapping
-MODE_BUS = 3
-MODE_TRAM = 0
-MODE_METRO = 1
-MODE_RAIL = 2
-RAIL_MODES = {MODE_TRAM, MODE_METRO, MODE_RAIL}
+# GTFS route_type mapping (basic + extended types)
+# See: https://gtfs.org/schedule/reference/#routestxt
+# Basic types: 0=Tram, 1=Metro, 2=Rail, 3=Bus, 4=Ferry, 5=Cable, 6=Gondola, 7=Funicular
+# Extended types: 100-199=Rail, 200-299=Coach, 400-499=Metro, 700-799=Bus, 900-999=Tram, 1000-1199=Water
+
+
+def classify_route_type(route_type):
+    """Classify a GTFS route_type (basic or extended) into 'bus', 'rail', or 'other'."""
+    rt = int(route_type)
+    # Basic types
+    if rt == 3:
+        return "bus"
+    if rt in (0, 1, 2, 5, 6, 7):
+        return "rail"  # tram, metro, rail, cable car, gondola, funicular
+    # Extended types
+    if 700 <= rt <= 799:
+        return "bus"
+    if 100 <= rt <= 199:
+        return "rail"  # all rail services
+    if 400 <= rt <= 499:
+        return "rail"  # metro
+    if 900 <= rt <= 999:
+        return "rail"  # tram
+    if 200 <= rt <= 299:
+        return "bus"   # coach services
+    if 1000 <= rt <= 1199:
+        return "other"  # water transport
+    return "other"
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -217,6 +239,22 @@ def generate_bus_geometries(bus_routes, trip_stops, stops):
     return geometries
 
 
+def normalize_route_type(route_type):
+    """Convert extended GTFS route_type to basic type for frontend styling."""
+    rt = int(route_type)
+    cls = classify_route_type(rt)
+    if cls == "bus":
+        return 3
+    # Map rail subtypes more specifically
+    if 400 <= rt <= 499 or rt == 1:
+        return 1  # Metro
+    if 900 <= rt <= 999 or rt == 0:
+        return 0  # Tram
+    if cls == "rail":
+        return 2  # Rail (default for all other rail types)
+    return 3  # Default to bus
+
+
 def write_outputs(best_trips, trip_info, trip_stops, stops, routes_meta,
                   bus_geometries, rail_geometries, best_trip_modes, output_dir):
     """Write routes.geojson, route_stops.json, and stops.geojson."""
@@ -226,7 +264,7 @@ def write_outputs(best_trips, trip_info, trip_stops, stops, routes_meta,
     route_data = {}
 
     for (line, headsign), tid in sorted(best_trips.items()):
-        route_type = best_trip_modes[(line, headsign)]
+        route_type = normalize_route_type(best_trip_modes[(line, headsign)])
         route_id = trip_info[tid]["route_id"]
         color = routes_meta[route_id].get("color", "")
 
@@ -412,16 +450,22 @@ if __name__ == "__main__":
     best_trips = pick_best_trips(trip_info, trip_stops, routes_meta)
     print(f"  Selected {len(best_trips)} route variants")
 
-    # Build route_type lookup for best trips
-    best_trip_modes = {}
+    # Build mode classification for best trips
+    best_trip_modes = {}  # (line, headsign) -> route_type (original GTFS value)
+    best_trip_classes = {}  # (line, headsign) -> "bus" | "rail" | "other"
     for (line, headsign), tid in best_trips.items():
         route_id = trip_info[tid]["route_id"]
-        best_trip_modes[(line, headsign)] = routes_meta[route_id]["route_type"]
+        rt = routes_meta[route_id]["route_type"]
+        best_trip_modes[(line, headsign)] = rt
+        best_trip_classes[(line, headsign)] = classify_route_type(rt)
 
-    bus_routes = {k: v for k, v in best_trips.items() if best_trip_modes[k] == MODE_BUS}
-    rail_routes = {k: v for k, v in best_trips.items() if best_trip_modes[k] in RAIL_MODES}
+    bus_routes = {k: v for k, v in best_trips.items() if best_trip_classes[k] == "bus"}
+    rail_routes = {k: v for k, v in best_trips.items() if best_trip_classes[k] == "rail"}
+    other_routes = {k: v for k, v in best_trips.items() if best_trip_classes[k] == "other"}
     print(f"    Bus routes: {len(bus_routes)}")
     print(f"    Rail/tram/metro routes: {len(rail_routes)}")
+    if other_routes:
+        print(f"    Other (skipped): {len(other_routes)}")
 
     # Step 6: Generate bus geometries via OSRM
     print(f"\nGenerating bus geometries ({len(bus_routes)} routes)...")
