@@ -98,6 +98,45 @@ def load_routes_metadata(gtfs_dir, route_ids):
     return routes
 
 
+def load_stop_sequences(gtfs_dir, trip_ids, stop_ids):
+    """Load stop sequences for given trips, filtered to known stops.
+    Returns trip_id -> sorted list of {seq, stop_id, arrival, departure}."""
+    trip_stops = defaultdict(list)
+    print("  Loading stop sequences from stop_times.txt...")
+    with open(gtfs_dir / "stop_times.txt", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            tid = row["trip_id"]
+            if tid in trip_ids and row["stop_id"] in stop_ids:
+                trip_stops[tid].append({
+                    "seq": int(row["stop_sequence"]),
+                    "stop_id": row["stop_id"],
+                    "arrival": row["arrival_time"],
+                    "departure": row["departure_time"],
+                })
+    for tid in trip_stops:
+        trip_stops[tid].sort(key=lambda x: x["seq"])
+    return dict(trip_stops)
+
+
+def pick_best_trips(trip_info, trip_stops, routes_meta):
+    """Pick the best trip (most stops) per (line_name, headsign).
+    Returns dict of (line, headsign) -> trip_id."""
+    best = {}
+    for tid, info in trip_info.items():
+        if tid not in trip_stops or not trip_stops[tid]:
+            continue
+        route_id = info["route_id"]
+        if route_id not in routes_meta:
+            continue
+        meta = routes_meta[route_id]
+        line = meta["short_name"]
+        headsign = info["headsign"]
+        key = (line, headsign)
+        if key not in best or len(trip_stops[tid]) > len(trip_stops[best[key]]):
+            best[key] = tid
+    return best
+
+
 if __name__ == "__main__":
     if not GTFS_DIR.exists():
         print(f"Error: GTFS directory not found at {GTFS_DIR}")
@@ -128,3 +167,24 @@ if __name__ == "__main__":
     mode_names = {0: "Tram", 1: "Metro", 2: "Rail", 3: "Bus"}
     for rt, count in sorted(mode_counts.items()):
         print(f"    {mode_names.get(rt, f'Type {rt}')}: {count} routes")
+
+    # Step 4: Load stop sequences
+    print("Loading stop sequences...")
+    trip_stops = load_stop_sequences(GTFS_DIR, set(trip_info.keys()), stop_ids)
+    print(f"  Loaded sequences for {len(trip_stops)} trips")
+
+    # Step 5: Pick best trip per (line, headsign)
+    print("Selecting best trips...")
+    best_trips = pick_best_trips(trip_info, trip_stops, routes_meta)
+    print(f"  Selected {len(best_trips)} route variants")
+
+    # Build route_type lookup for best trips
+    best_trip_modes = {}
+    for (line, headsign), tid in best_trips.items():
+        route_id = trip_info[tid]["route_id"]
+        best_trip_modes[(line, headsign)] = routes_meta[route_id]["route_type"]
+
+    bus_routes = {k: v for k, v in best_trips.items() if best_trip_modes[k] == MODE_BUS}
+    rail_routes = {k: v for k, v in best_trips.items() if best_trip_modes[k] in RAIL_MODES}
+    print(f"    Bus routes: {len(bus_routes)}")
+    print(f"    Rail/tram/metro routes: {len(rail_routes)}")
