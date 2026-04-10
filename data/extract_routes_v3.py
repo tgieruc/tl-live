@@ -137,6 +137,73 @@ def pick_best_trips(trip_info, trip_stops, routes_meta):
     return best
 
 
+def snap_to_roads_osrm(coords, max_retries=3):
+    """Snap a sequence of [lon, lat] coordinates to roads via OSRM.
+    Returns snapped coordinates or original coords on failure."""
+    if len(coords) < 2:
+        return coords
+
+    # OSRM has a limit of ~100 coordinates per request
+    # Split into chunks if needed and concatenate results
+    CHUNK_SIZE = 80
+    if len(coords) > CHUNK_SIZE:
+        all_snapped = []
+        for i in range(0, len(coords), CHUNK_SIZE - 1):  # overlap by 1 for continuity
+            chunk = coords[i:i + CHUNK_SIZE]
+            if len(chunk) < 2:
+                break
+            snapped = snap_to_roads_osrm(chunk, max_retries)
+            if all_snapped:
+                snapped = snapped[1:]  # skip first point (overlap)
+            all_snapped.extend(snapped)
+        return all_snapped
+
+    coord_str = ";".join(f"{c[0]},{c[1]}" for c in coords)
+    url = f"http://router.project-osrm.org/route/v1/driving/{coord_str}?overview=full&geometries=geojson"
+
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(url, headers={"User-Agent": "tl-live-dashboard/2.0"}, timeout=15)
+            if resp.status_code == 429:
+                wait = 2 ** (attempt + 1)
+                print(f"    Rate limited, waiting {wait}s...")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") == "Ok" and data["routes"]:
+                snapped = data["routes"][0]["geometry"]["coordinates"]
+                print(f"    OSRM: {len(coords)} stops -> {len(snapped)} road points")
+                return snapped
+        except Exception as e:
+            print(f"    OSRM attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+
+    print(f"    OSRM failed, using straight lines")
+    return coords
+
+
+def generate_bus_geometries(bus_routes, trip_stops, stops):
+    """Generate OSRM-snapped geometries for bus routes.
+    Returns dict of (line, headsign) -> [lon, lat] coordinate list."""
+    geometries = {}
+    total = len(bus_routes)
+    for i, ((line, headsign), tid) in enumerate(sorted(bus_routes.items())):
+        print(f"  [{i+1}/{total}] Bus {line} -> {headsign}")
+        coords = []
+        for stop in trip_stops[tid]:
+            s = stops.get(stop["stop_id"])
+            if s:
+                coords.append([s["lon"], s["lat"]])
+        if len(coords) >= 2:
+            geometries[(line, headsign)] = snap_to_roads_osrm(coords)
+            time.sleep(1)  # rate limit: 1 req/sec to public OSRM
+        else:
+            print(f"    Skipping (only {len(coords)} coords)")
+    return geometries
+
+
 if __name__ == "__main__":
     if not GTFS_DIR.exists():
         print(f"Error: GTFS directory not found at {GTFS_DIR}")
@@ -188,3 +255,8 @@ if __name__ == "__main__":
     rail_routes = {k: v for k, v in best_trips.items() if best_trip_modes[k] in RAIL_MODES}
     print(f"    Bus routes: {len(bus_routes)}")
     print(f"    Rail/tram/metro routes: {len(rail_routes)}")
+
+    # Step 6: Generate bus geometries via OSRM
+    print(f"\nGenerating bus geometries ({len(bus_routes)} routes)...")
+    bus_geometries = generate_bus_geometries(bus_routes, trip_stops, stops)
+    print(f"  Generated {len(bus_geometries)} bus geometries")
