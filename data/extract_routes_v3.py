@@ -204,6 +204,79 @@ def generate_bus_geometries(bus_routes, trip_stops, stops):
     return geometries
 
 
+def fetch_rail_network(center_lat, center_lon, radius_m=15000):
+    """Fetch rail/tram/subway network from OSM via osmnx.
+    Returns a networkx MultiDiGraph with rail edges."""
+    print("  Downloading OSM rail network...")
+    custom_filter = '["railway"~"rail|light_rail|subway|tram|narrow_gauge|funicular"]'
+    try:
+        G = ox.graph_from_point(
+            (center_lat, center_lon),
+            dist=radius_m,
+            network_type="all",
+            custom_filter=custom_filter,
+            retain_all=True,
+            truncate_by_edge=True,
+        )
+        print(f"  OSM rail network: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+        return G
+    except Exception as e:
+        print(f"  Failed to fetch OSM rail network: {e}")
+        return None
+
+
+def snap_point_to_graph(G, lat, lon):
+    """Find the nearest node in graph G to the given lat/lon. Returns node id."""
+    return ox.nearest_nodes(G, lon, lat)
+
+
+def route_between_stops_rail(G, stop_coords):
+    """Route through rail graph between consecutive stops.
+    stop_coords: list of (lat, lon) tuples.
+    Returns list of [lon, lat] coordinates for the full route."""
+    if G is None or len(stop_coords) < 2:
+        return [[lon, lat] for lat, lon in stop_coords]
+
+    all_coords = []
+    for i in range(len(stop_coords) - 1):
+        lat1, lon1 = stop_coords[i]
+        lat2, lon2 = stop_coords[i + 1]
+        try:
+            node1 = snap_point_to_graph(G, lat1, lon1)
+            node2 = snap_point_to_graph(G, lat2, lon2)
+            route_nodes = nx.shortest_path(G, node1, node2, weight="length")
+            segment_coords = [[G.nodes[n]["x"], G.nodes[n]["y"]] for n in route_nodes]
+            if all_coords:
+                segment_coords = segment_coords[1:]  # avoid duplicate junction point
+            all_coords.extend(segment_coords)
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            if all_coords:
+                all_coords.append([lon2, lat2])
+            else:
+                all_coords.extend([[lon1, lat1], [lon2, lat2]])
+
+    return all_coords if all_coords else [[lon, lat] for lat, lon in stop_coords]
+
+
+def generate_rail_geometries(rail_routes, trip_stops, stops, rail_graph):
+    """Generate OSM-routed geometries for rail/tram/metro routes.
+    Returns dict of (line, headsign) -> [lon, lat] coordinate list."""
+    geometries = {}
+    total = len(rail_routes)
+    for i, ((line, headsign), tid) in enumerate(sorted(rail_routes.items())):
+        print(f"  [{i+1}/{total}] Rail {line} -> {headsign}")
+        stop_coords = []
+        for stop in trip_stops[tid]:
+            s = stops.get(stop["stop_id"])
+            if s:
+                stop_coords.append((s["lat"], s["lon"]))
+        if len(stop_coords) >= 2:
+            geometries[(line, headsign)] = route_between_stops_rail(rail_graph, stop_coords)
+        else:
+            print(f"    Skipping (only {len(stop_coords)} stops)")
+    return geometries
+
+
 if __name__ == "__main__":
     if not GTFS_DIR.exists():
         print(f"Error: GTFS directory not found at {GTFS_DIR}")
@@ -260,3 +333,14 @@ if __name__ == "__main__":
     print(f"\nGenerating bus geometries ({len(bus_routes)} routes)...")
     bus_geometries = generate_bus_geometries(bus_routes, trip_stops, stops)
     print(f"  Generated {len(bus_geometries)} bus geometries")
+
+    # Step 7: Generate rail geometries via OSM
+    rail_graph = None
+    if rail_routes:
+        print(f"\nFetching OSM rail network...")
+        rail_graph = fetch_rail_network(LAUSANNE_LAT, LAUSANNE_LON, radius_m=RADIUS_KM * 1000 + 3000)
+        print(f"\nGenerating rail geometries ({len(rail_routes)} routes)...")
+        rail_geometries = generate_rail_geometries(rail_routes, trip_stops, stops, rail_graph)
+        print(f"  Generated {len(rail_geometries)} rail geometries")
+    else:
+        rail_geometries = {}
