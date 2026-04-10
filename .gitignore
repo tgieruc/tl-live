@@ -8,6 +8,16 @@ backend/tl_backend/build/
 # GTFS raw data (large files)
 data/gtfs_bus.zip
 data/gtfs_bus/
+data/gtfs_national.zip
+data/gtfs_national/
+
+# Python venv
+data/.venv/
+
+# Pipeline intermediate outputs (final copies go to priv/static/)
+data/routes.geojson
+data/route_stops.json
+data/stops.geojson
 
 # SvelteKit
 frontend/tl-dashboard/.svelte-kit/
