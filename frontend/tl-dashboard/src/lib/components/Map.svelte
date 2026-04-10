@@ -2,9 +2,12 @@
 	import { onMount } from 'svelte';
 	import maplibregl from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
-	import { LINE_COLORS } from '$lib/types';
+	import { LINE_COLORS, getLineColor, getRouteTypeStyle } from '$lib/types';
+	import { stopId, stopCoords, stopName } from '$lib/stores/stop';
+	import { activeLines } from '$lib/stores/activeLines';
+	import { base } from '$app/paths';
 
-	const CENTER: [number, number] = [6.583961, 46.532379];
+	const DEFAULT_CENTER: [number, number] = [6.583961, 46.532379];
 
 	let mapContainer: HTMLDivElement;
 	let map: maplibregl.Map;
@@ -95,9 +98,19 @@
 	}
 
 	async function loadRoutes(m: maplibregl.Map) {
-		const [routesRes, stopsRes] = await Promise.all([fetch('/api/routes'), fetch('/api/stops')]);
-		const routes = await routesRes.json();
-		const stops = await stopsRes.json();
+		let routes, stops;
+		try {
+			const [routesRes, stopsRes] = await Promise.all([fetch(`${base}/api/routes`), fetch(`${base}/api/stops`)]);
+			if (!routesRes.ok || !stopsRes.ok) {
+				console.error('Failed to load routes/stops:', routesRes.status, stopsRes.status);
+				return;
+			}
+			routes = await routesRes.json();
+			stops = await stopsRes.json();
+		} catch (e) {
+			console.error('Failed to load routes/stops:', e);
+			return;
+		}
 
 		// Pre-compute route geometries with cumulative distances
 		for (const feat of routes.features) {
@@ -113,26 +126,66 @@
 			routeGeoms[line].push(geom);
 		}
 
+		// Fill in colors using our LINE_COLORS map for features missing colors
+		for (const feat of routes.features) {
+			if (!feat.properties.color) {
+				feat.properties.color = getLineColor(feat.properties.line);
+			}
+		}
+
 		m.addSource('routes', { type: 'geojson', data: routes });
 
-		for (const [line, color] of Object.entries(LINE_COLORS)) {
-			m.addLayer({
-				id: `route-glow-${line}`,
-				type: 'line',
-				source: 'routes',
-				filter: ['==', ['get', 'line'], line],
-				layout: { 'line-join': 'round', 'line-cap': 'round' },
-				paint: { 'line-color': color, 'line-width': 6, 'line-opacity': 0.12, 'line-blur': 3 }
-			});
-			m.addLayer({
-				id: `route-line-${line}`,
-				type: 'line',
-				source: 'routes',
-				filter: ['==', ['get', 'line'], line],
-				layout: { 'line-join': 'round', 'line-cap': 'round' },
-				paint: { 'line-color': color, 'line-width': 2.5, 'line-opacity': 0.6 }
-			});
-		}
+		// Inactive routes (faded background) — shown for lines NOT in activeLines
+		m.addLayer({
+			id: 'routes-inactive-glow',
+			type: 'line',
+			source: 'routes',
+			layout: { 'line-join': 'round', 'line-cap': 'round' },
+			paint: {
+				'line-color': ['coalesce', ['get', 'color'], '#888888'],
+				'line-width': 4,
+				'line-opacity': 0.05,
+				'line-blur': 3
+			}
+		});
+		m.addLayer({
+			id: 'routes-inactive',
+			type: 'line',
+			source: 'routes',
+			layout: { 'line-join': 'round', 'line-cap': 'round' },
+			paint: {
+				'line-color': ['coalesce', ['get', 'color'], '#888888'],
+				'line-width': 1.5,
+				'line-opacity': 0.15
+			}
+		});
+
+		// Active routes (emphasized) — shown for lines IN activeLines
+		m.addLayer({
+			id: 'routes-active-glow',
+			type: 'line',
+			source: 'routes',
+			filter: ['in', ['get', 'line'], ['literal', []]],
+			layout: { 'line-join': 'round', 'line-cap': 'round' },
+			paint: {
+				'line-color': ['coalesce', ['get', 'color'], '#888888'],
+				'line-width': 6,
+				'line-opacity': 0.12,
+				'line-blur': 3
+			}
+		});
+		m.addLayer({
+			id: 'routes-active',
+			type: 'line',
+			source: 'routes',
+			filter: ['in', ['get', 'line'], ['literal', []]],
+			layout: { 'line-join': 'round', 'line-cap': 'round' },
+			paint: {
+				'line-color': ['coalesce', ['get', 'color'], '#888888'],
+				'line-width': 2.5,
+				'line-opacity': 0.7
+			}
+		});
 
 		m.addSource('stops', { type: 'geojson', data: stops });
 		m.addLayer({
@@ -166,7 +219,8 @@
 
 	async function fetchTrajectories() {
 		try {
-			const res = await fetch('/api/positions');
+			const res = await fetch(`${base}/api/positions?stop=${$stopId}`);
+			if (!res.ok) return;
 			const data = await res.json();
 			trajectories = data.trajectories || [];
 		} catch (e) {
@@ -190,7 +244,11 @@
 				features.push({
 					type: 'Feature',
 					geometry: { type: 'Point', coordinates: pos },
-					properties: { line: traj.line, destination: traj.destination }
+					properties: {
+						line: traj.line,
+						destination: traj.destination,
+						color: getLineColor(traj.line)
+					}
 				});
 			}
 
@@ -209,7 +267,7 @@
 		map = new maplibregl.Map({
 			container: mapContainer,
 			style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-			center: CENTER,
+			center: DEFAULT_CENTER,
 			zoom: 14.5,
 			attributionControl: false
 		});
@@ -220,7 +278,7 @@
 		map.on('load', async () => {
 			await loadRoutes(map);
 
-			// Censuy home marker
+			// Home stop marker
 			map.addSource('home-stop', {
 				type: 'geojson',
 				data: {
@@ -228,8 +286,8 @@
 					features: [
 						{
 							type: 'Feature',
-							geometry: { type: 'Point', coordinates: CENTER },
-							properties: { name: 'Censuy' }
+							geometry: { type: 'Point', coordinates: $stopCoords },
+							properties: { name: $stopName }
 						}
 					]
 				}
@@ -256,7 +314,7 @@
 				type: 'symbol',
 				source: 'home-stop',
 				layout: {
-					'text-field': 'Censuy',
+					'text-field': ['get', 'name'],
 					'text-size': 11,
 					'text-offset': [0, 1.5],
 					'text-anchor': 'top',
@@ -265,58 +323,101 @@
 				paint: { 'text-color': '#00d4aa', 'text-halo-color': '#0a0a0a', 'text-halo-width': 2 }
 			});
 
-			// Bus positions source
+			// Bus positions source (data-driven: works for any line)
 			map.addSource('buses', {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
 			});
 
-			for (const [line, color] of Object.entries(LINE_COLORS)) {
-				map.addLayer({
-					id: `bus-glow-${line}`,
-					type: 'circle',
-					source: 'buses',
-					filter: ['==', ['get', 'line'], line],
-					paint: { 'circle-color': color, 'circle-radius': 12, 'circle-opacity': 0.3, 'circle-blur': 0.8 }
-				});
-				map.addLayer({
-					id: `bus-dot-${line}`,
-					type: 'circle',
-					source: 'buses',
-					filter: ['==', ['get', 'line'], line],
-					paint: {
-						'circle-color': color,
-						'circle-radius': 6,
-						'circle-stroke-width': 2,
-						'circle-stroke-color': '#0a0a0a'
-					}
-				});
-				map.addLayer({
-					id: `bus-label-${line}`,
-					type: 'symbol',
-					source: 'buses',
-					filter: ['==', ['get', 'line'], line],
-					layout: {
-						'text-field': ['get', 'line'],
-						'text-size': 8,
-						'text-font': ['Noto Sans Regular'],
-						'text-allow-overlap': true
-					},
-					paint: { 'text-color': '#ffffff' }
-				});
-			}
+			map.addLayer({
+				id: 'bus-glow',
+				type: 'circle',
+				source: 'buses',
+				paint: {
+					'circle-color': ['get', 'color'],
+					'circle-radius': 12,
+					'circle-opacity': 0.3,
+					'circle-blur': 0.8
+				}
+			});
+			map.addLayer({
+				id: 'bus-dot',
+				type: 'circle',
+				source: 'buses',
+				paint: {
+					'circle-color': ['get', 'color'],
+					'circle-radius': 6,
+					'circle-stroke-width': 2,
+					'circle-stroke-color': '#0a0a0a'
+				}
+			});
+			map.addLayer({
+				id: 'bus-label',
+				type: 'symbol',
+				source: 'buses',
+				layout: {
+					'text-field': ['get', 'line'],
+					'text-size': 8,
+					'text-font': ['Noto Sans Regular'],
+					'text-allow-overlap': true
+				},
+				paint: { 'text-color': '#ffffff' }
+			});
 
 			// Fetch initial data and start animation
 			await fetchTrajectories();
 			animateBuses(map);
 		});
 
-		// Refresh trajectory data every 30 seconds (not positions — just the bus list)
+		// React to active lines changes — update route emphasis
+		const unsubActiveLines = activeLines.subscribe((lines) => {
+			if (!map || !map.getLayer('routes-active')) return;
+			const lineArray = Array.from(lines);
+			const filter: any = lineArray.length > 0
+				? ['in', ['get', 'line'], ['literal', lineArray]]
+				: ['in', ['get', 'line'], ['literal', []]];
+			map.setFilter('routes-active', filter);
+			map.setFilter('routes-active-glow', filter);
+
+			const inactiveFilter: any = lineArray.length > 0
+				? ['!', ['in', ['get', 'line'], ['literal', lineArray]]]
+				: true;
+			map.setFilter('routes-inactive', inactiveFilter);
+			map.setFilter('routes-inactive-glow', inactiveFilter);
+		});
+
+		// Refresh trajectory data every 30 seconds
 		const trajectoryInterval = setInterval(fetchTrajectories, 30_000);
+
+		// React to stop changes
+		const unsubCoords = stopCoords.subscribe((coords) => {
+			if (!map) return;
+			map.flyTo({ center: coords as [number, number], zoom: 14.5, duration: 1500 });
+			const src = map.getSource('home-stop') as maplibregl.GeoJSONSource;
+			if (src) {
+				src.setData({
+					type: 'FeatureCollection',
+					features: [
+						{
+							type: 'Feature',
+							geometry: { type: 'Point', coordinates: coords },
+							properties: { name: $stopName }
+						}
+					]
+				});
+			}
+		});
+
+		const unsubStop = stopId.subscribe(() => {
+			fetchTrajectories();
+		});
 
 		return () => {
 			clearInterval(trajectoryInterval);
 			if (animFrameId) cancelAnimationFrame(animFrameId);
+			unsubActiveLines();
+			unsubCoords();
+			unsubStop();
 			map.remove();
 		};
 	});
