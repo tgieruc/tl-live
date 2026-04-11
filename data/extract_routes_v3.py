@@ -153,10 +153,12 @@ def load_stop_sequences(gtfs_dir, trip_ids):
     return dict(trip_stops)
 
 
-def pick_best_trips(trip_info, trip_stops, routes_meta):
-    """Pick the best trip (most stops) per (line_name, headsign).
-    Returns dict of (line, headsign) -> trip_id."""
-    best = {}
+def pick_best_trips(trip_info, trip_stops, routes_meta, max_variants_per_line=2):
+    """Pick the best trips per line. First selects the best trip (most stops)
+    per (line, headsign), then keeps only the top max_variants_per_line variants
+    per line (by stop count) to avoid cluttering the map with partial routes."""
+    # Step 1: best trip per (line, headsign)
+    best_per_headsign = {}
     for tid, info in trip_info.items():
         if tid not in trip_stops or not trip_stops[tid]:
             continue
@@ -167,8 +169,21 @@ def pick_best_trips(trip_info, trip_stops, routes_meta):
         line = meta["short_name"]
         headsign = info["headsign"]
         key = (line, headsign)
-        if key not in best or len(trip_stops[tid]) > len(trip_stops[best[key]]):
-            best[key] = tid
+        if key not in best_per_headsign or len(trip_stops[tid]) > len(trip_stops[best_per_headsign[key]]):
+            best_per_headsign[key] = tid
+
+    # Step 2: keep only top N variants per line (longest routes = main directions)
+    from collections import defaultdict as dd
+    line_variants = dd(list)
+    for (line, headsign), tid in best_per_headsign.items():
+        line_variants[line].append((len(trip_stops[tid]), headsign, tid))
+
+    best = {}
+    for line, variants in line_variants.items():
+        variants.sort(reverse=True)  # longest first
+        for _, headsign, tid in variants[:max_variants_per_line]:
+            best[(line, headsign)] = tid
+
     return best
 
 
