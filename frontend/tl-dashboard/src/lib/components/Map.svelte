@@ -126,11 +126,9 @@
 			routeGeoms[line].push(geom);
 		}
 
-		// Fill in colors using our LINE_COLORS map for features missing colors
+		// Fill in colors using our LINE_COLORS map for all features
 		for (const feat of routes.features) {
-			if (!feat.properties.color) {
-				feat.properties.color = getLineColor(feat.properties.line);
-			}
+			feat.properties.color = getLineColor(feat.properties.line);
 		}
 
 		m.addSource('routes', { type: 'geojson', data: routes });
@@ -143,7 +141,7 @@
 			filter: ['in', ['get', 'line'], ['literal', []]],
 			layout: { 'line-join': 'round', 'line-cap': 'round' },
 			paint: {
-				'line-color': ['coalesce', ['get', 'color'], '#888888'],
+				'line-color': ['get', 'color'],
 				'line-width': 6,
 				'line-opacity': 0.12,
 				'line-blur': 3
@@ -156,7 +154,7 @@
 			filter: ['in', ['get', 'line'], ['literal', []]],
 			layout: { 'line-join': 'round', 'line-cap': 'round' },
 			paint: {
-				'line-color': ['coalesce', ['get', 'color'], '#888888'],
+				'line-color': ['get', 'color'],
 				'line-width': 2.5,
 				'line-opacity': 0.6
 			}
@@ -237,6 +235,8 @@
 
 		frame();
 	}
+
+	let unsubActiveLines: (() => void) | null = null;
 
 	onMount(() => {
 		map = new maplibregl.Map({
@@ -342,17 +342,17 @@
 			// Fetch initial data and start animation
 			await fetchTrajectories();
 			animateBuses(map);
-		});
 
-		// React to active lines changes — show only routes for the selected stop
-		const unsubActiveLines = activeLines.subscribe((lines) => {
-			if (!map || !map.getLayer('routes-line')) return;
-			const lineArray = Array.from(lines);
-			const filter: any = lineArray.length > 0
-				? ['in', ['get', 'line'], ['literal', lineArray]]
-				: ['in', ['get', 'line'], ['literal', []]];
-			map.setFilter('routes-line', filter);
-			map.setFilter('routes-glow', filter);
+			// React to active lines changes — show only routes for the selected stop
+			unsubActiveLines = activeLines.subscribe((lines) => {
+				if (!map || !map.getLayer('routes-line')) return;
+				const lineArray = Array.from(lines);
+				const filter: any = lineArray.length > 0
+					? ['in', ['get', 'line'], ['literal', lineArray]]
+					: ['in', ['get', 'line'], ['literal', []]];
+				map.setFilter('routes-line', filter);
+				map.setFilter('routes-glow', filter);
+			});
 		});
 
 		// Refresh trajectory data every 30 seconds
@@ -384,7 +384,7 @@
 		return () => {
 			clearInterval(trajectoryInterval);
 			if (animFrameId) cancelAnimationFrame(animFrameId);
-			unsubActiveLines();
+			if (unsubActiveLines) unsubActiveLines();
 			unsubCoords();
 			unsubStop();
 			map.remove();
