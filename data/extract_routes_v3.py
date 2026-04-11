@@ -209,7 +209,7 @@ def snap_to_roads_osrm(coords, max_retries=3):
         return all_snapped
 
     coord_str = ";".join(f"{c[0]},{c[1]}" for c in coords)
-    url = f"http://router.project-osrm.org/route/v1/driving/{coord_str}?overview=full&geometries=geojson"
+    url = f"http://router.project-osrm.org/route/v1/driving/{coord_str}?overview=full&geometries=geojson&continue_straight=true"
 
     for attempt in range(max_retries):
         try:
@@ -235,7 +235,7 @@ def snap_to_roads_osrm(coords, max_retries=3):
 
 
 def generate_bus_geometries(bus_routes, trip_stops, stops):
-    """Generate OSRM-snapped geometries for bus routes.
+    """Generate OSRM-matched geometries for bus routes.
     Returns dict of (line, headsign) -> [lon, lat] coordinate list."""
     geometries = {}
     total = len(bus_routes)
