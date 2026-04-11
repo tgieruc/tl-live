@@ -135,34 +135,9 @@
 
 		m.addSource('routes', { type: 'geojson', data: routes });
 
-		// Inactive routes (faded background) — shown for lines NOT in activeLines
+		// Route lines — only shown for lines serving the selected stop
 		m.addLayer({
-			id: 'routes-inactive-glow',
-			type: 'line',
-			source: 'routes',
-			layout: { 'line-join': 'round', 'line-cap': 'round' },
-			paint: {
-				'line-color': ['coalesce', ['get', 'color'], '#888888'],
-				'line-width': 4,
-				'line-opacity': 0.05,
-				'line-blur': 3
-			}
-		});
-		m.addLayer({
-			id: 'routes-inactive',
-			type: 'line',
-			source: 'routes',
-			layout: { 'line-join': 'round', 'line-cap': 'round' },
-			paint: {
-				'line-color': ['coalesce', ['get', 'color'], '#888888'],
-				'line-width': 1.5,
-				'line-opacity': 0.15
-			}
-		});
-
-		// Active routes (emphasized) — shown for lines IN activeLines
-		m.addLayer({
-			id: 'routes-active-glow',
+			id: 'routes-glow',
 			type: 'line',
 			source: 'routes',
 			filter: ['in', ['get', 'line'], ['literal', []]],
@@ -175,7 +150,7 @@
 			}
 		});
 		m.addLayer({
-			id: 'routes-active',
+			id: 'routes-line',
 			type: 'line',
 			source: 'routes',
 			filter: ['in', ['get', 'line'], ['literal', []]],
@@ -183,7 +158,7 @@
 			paint: {
 				'line-color': ['coalesce', ['get', 'color'], '#888888'],
 				'line-width': 2.5,
-				'line-opacity': 0.7
+				'line-opacity': 0.6
 			}
 		});
 
@@ -369,21 +344,15 @@
 			animateBuses(map);
 		});
 
-		// React to active lines changes — update route emphasis
+		// React to active lines changes — show only routes for the selected stop
 		const unsubActiveLines = activeLines.subscribe((lines) => {
-			if (!map || !map.getLayer('routes-active')) return;
+			if (!map || !map.getLayer('routes-line')) return;
 			const lineArray = Array.from(lines);
 			const filter: any = lineArray.length > 0
 				? ['in', ['get', 'line'], ['literal', lineArray]]
 				: ['in', ['get', 'line'], ['literal', []]];
-			map.setFilter('routes-active', filter);
-			map.setFilter('routes-active-glow', filter);
-
-			const inactiveFilter: any = lineArray.length > 0
-				? ['!', ['in', ['get', 'line'], ['literal', lineArray]]]
-				: true;
-			map.setFilter('routes-inactive', inactiveFilter);
-			map.setFilter('routes-inactive-glow', inactiveFilter);
+			map.setFilter('routes-line', filter);
+			map.setFilter('routes-glow', filter);
 		});
 
 		// Refresh trajectory data every 30 seconds

@@ -6,7 +6,10 @@ export default defineConfig({
 	plugins: [sveltekit(), tailwindcss()],
 	server: {
 		proxy: {
-			'/api': 'http://localhost:3000'
+			'/tl/api': {
+				target: 'http://localhost:3000',
+				rewrite: (path: string) => path.replace(/^\/tl/, '')
+			}
 		}
 	}
 });
