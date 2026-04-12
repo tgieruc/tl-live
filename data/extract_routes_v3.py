@@ -330,9 +330,9 @@ def write_outputs(best_trips, trip_info, trip_stops, stops, routes_meta,
     routes_geojson = {"type": "FeatureCollection", "features": features}
     stops_geojson = {"type": "FeatureCollection", "features": stop_features}
 
-    routes_path = output_dir / "routes.geojson"
-    stops_path = output_dir / "stops.geojson"
-    route_stops_path = output_dir / "route_stops.json"
+    routes_path = output_dir / "rail_routes.geojson"
+    stops_path = output_dir / "rail_stops.geojson"
+    route_stops_path = output_dir / "rail_route_stops.json"
 
     with open(routes_path, "w") as f:
         json.dump(routes_geojson, f)
@@ -482,10 +482,9 @@ if __name__ == "__main__":
     if other_routes:
         print(f"    Other (skipped): {len(other_routes)}")
 
-    # Step 6: Generate bus geometries via OSRM
-    print(f"\nGenerating bus geometries ({len(bus_routes)} routes)...")
-    bus_geometries = generate_bus_geometries(bus_routes, trip_stops, stops)
-    print(f"  Generated {len(bus_geometries)} bus geometries")
+    # Step 6: Skip bus geometries (handled by extract_routes_v2.py with TL GTFS feed)
+    bus_geometries = {}
+    print(f"\nSkipping {len(bus_routes)} bus routes (use extract_routes_v2.py for buses)")
 
     # Step 7: Generate rail geometries via OSM
     rail_graph = None

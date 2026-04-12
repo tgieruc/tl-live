@@ -22,12 +22,11 @@ def snap_to_roads(coords):
         print(f"    OSRM failed: {e}")
     return coords  # fallback to straight lines
 
-target_lines = {'25', '32', '33'}
 route_ids = {}
 
 with open('gtfs_bus/routes.txt') as f:
     for row in csv.DictReader(f):
-        if row['agency_id'] == '000151' and row['route_short_name'] in target_lines:
+        if row['agency_id'] == '000151':
             route_ids[row['route_id']] = row['route_short_name']
 
 # Get headsigns to identify directions
@@ -67,6 +66,19 @@ for tid, info in trip_info.items():
     if tid in trip_stops:
         if key not in best or len(trip_stops[tid]) > len(trip_stops[best[key]]):
             best[key] = tid
+
+# Keep only top 2 variants per line (longest routes = main directions)
+from collections import defaultdict as dd
+line_variants = dd(list)
+for (line, headsign), tid in best.items():
+    line_variants[line].append((len(trip_stops[tid]), headsign, tid))
+
+best_filtered = {}
+for line, variants in line_variants.items():
+    variants.sort(reverse=True)
+    for _, headsign, tid in variants[:2]:
+        best_filtered[(line, headsign)] = tid
+best = best_filtered
 
 # Load stops
 stops = {}
